@@ -1,0 +1,135 @@
+:root {
+  /* ── Raw Design Tokens (from DESIGN.md) ── */
+
+  /* Colors: brand & accent */
+  --color-primary: #0066cc;
+  --color-primary-focus: #0071e3;
+  --color-primary-on-dark: #2997ff;
+
+  /* Colors: text */
+  --color-ink: #1d1d1f;
+  --color-body: #1d1d1f;
+  --color-body-on-dark: #ffffff;
+  --color-body-muted: #cccccc;
+  --color-ink-muted-80: #333333;
+  --color-ink-muted-48: #7a7a7a;
+
+  /* Colors: surfaces */
+  --color-canvas: #ffffff;
+  --color-canvas-parchment: #f5f5f7;
+  --color-surface-pearl: #fafafc;
+  --color-surface-tile-1: #272729;
+  --color-surface-tile-2: #2a2a2c;
+  --color-surface-tile-3: #252527;
+  --color-surface-black: #000000;
+  --color-surface-chip-translucent: rgba(210, 210, 215, 0.64);
+
+  /* Colors: misc */
+  --color-divider-soft: #f0f0f0;
+  --color-hairline: #e0e0e0;
+  --color-on-primary: #ffffff;
+  --color-on-dark: #ffffff;
+
+  /* Border radius */
+  --rounded-none: 0px;
+  --rounded-xs: 5px;
+  --rounded-sm: 8px;
+  --rounded-md: 11px;
+  --rounded-lg: 18px;
+  --rounded-pill: 9999px;
+  --rounded-full: 9999px;
+
+  /* Spacing */
+  --spacing-xxs: 4px;
+  --spacing-xs: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 17px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+  --spacing-section: 80px;
+
+  /* Font stacks */
+  --font-display: "SF Pro Display", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-text: "SF Pro Text", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Elevation */
+  --shadow-product: rgba(0, 0, 0, 0.22) 3px 5px 30px 0px;
+  --shadow-node: 0 2px 20px rgba(0, 0, 0, 0.4);
+
+  /* ── Semantic Tokens — Dark Mode Defaults ── */
+  /* These are what components use. Remapped in light mode below. */
+
+  /* Canvas & node surfaces */
+  --bg-canvas: var(--color-surface-tile-1);
+  --bg-node: var(--color-surface-tile-2);
+  --bg-node-root: var(--color-surface-tile-1);
+  --bg-node-expanded: rgba(41, 151, 255, 0.08);
+
+  /* Text */
+  --text-primary: var(--color-on-dark);
+  --text-muted: var(--color-body-muted);
+
+  /* Node borders */
+  --border-node: rgba(255, 255, 255, 0.08);
+  --border-node-hover: rgba(41, 151, 255, 0.45);
+  --border-node-expanded: rgba(41, 151, 255, 0.6);
+  --border-node-root: rgba(255, 255, 255, 0.18);
+  --border-node-file-hover: rgba(255, 255, 255, 0.15);
+
+  /* Edge & canvas */
+  --edge-stroke: rgba(255, 255, 255, 0.1);
+  --dot-color: rgba(255, 255, 255, 0.15);
+
+  /* Node interaction */
+  --chevron-color: var(--color-primary-on-dark);
+  --node-selected-glow: rgba(41, 151, 255, 0.3);
+
+  /* Icons */
+  --folder-icon-color: #636366;
+  --folder-icon-expanded-color: var(--color-primary-on-dark);
+
+  /* Nav bar — always on surface-black, never changes between modes */
+  --border-nav-bottom: rgba(255, 255, 255, 0.06);
+  --text-nav-path: var(--color-body-muted);
+  --border-btn-nav: rgba(255, 255, 255, 0.12);
+  --border-btn-nav-hover: rgba(255, 255, 255, 0.25);
+  --text-btn-nav: var(--color-body-muted);
+  --text-btn-nav-hover: var(--color-on-dark);
+}
+
+/* ── Light Mode Overrides ── */
+@media (prefers-color-scheme: light) {
+  :root {
+    /* Canvas & node surfaces */
+    --bg-canvas: var(--color-canvas-parchment);
+    --bg-node: var(--color-canvas);
+    --bg-node-root: var(--color-surface-pearl);
+    --bg-node-expanded: rgba(0, 102, 204, 0.05);
+
+    /* Text */
+    --text-primary: var(--color-ink);
+    --text-muted: var(--color-ink-muted-48);
+
+    /* Node borders */
+    --border-node: rgba(0, 0, 0, 0.08);
+    --border-node-hover: rgba(0, 102, 204, 0.35);
+    --border-node-expanded: var(--color-primary);
+    --border-node-root: rgba(0, 0, 0, 0.12);
+    --border-node-file-hover: rgba(0, 0, 0, 0.10);
+
+    /* Edge & canvas */
+    --edge-stroke: rgba(0, 0, 0, 0.12);
+    --dot-color: rgba(0, 0, 0, 0.10);
+
+    /* Node interaction */
+    --chevron-color: var(--color-primary);
+    --node-selected-glow: rgba(0, 102, 204, 0.3);
+
+    /* Icons */
+    --folder-icon-color: #8e8e93;
+    --folder-icon-expanded-color: var(--color-primary);
+
+    /* Nav bar stays on surface-black — no changes needed */
+  }
+}
