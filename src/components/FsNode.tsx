@@ -1,5 +1,6 @@
-import { memo } from "react";
+import { memo, useContext } from "react";
 import { Handle, Position, NodeProps } from "@xyflow/react";
+import { DragContext } from "./dragContext";
 
 export interface FsNodeData {
   name: string;
@@ -10,6 +11,7 @@ export interface FsNodeData {
   isExpanded: boolean;
   isRoot: boolean;
   isSelected: boolean;
+  isDropTarget: boolean;
   onExpand: (id: string, path: string) => void;
   onOpen?: (path: string) => void;
 }
@@ -58,6 +60,7 @@ function FolderIcon({ isExpanded }: { isExpanded: boolean }) {
 
 function FsNodeInner({ data }: NodeProps) {
   const d = data as unknown as FsNodeData;
+  const drag = useContext(DragContext);
 
   const sizeLabel = formatSize(d.size);
   const extLabel = d.extension ? `.${d.extension}` : (d.isDir ? "folder" : "file");
@@ -66,8 +69,13 @@ function FsNodeInner({ data }: NodeProps) {
     <>
       <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: "none" }} />
       <div
-        className={`fs-node ${d.isDir ? "fs-node--dir" : "fs-node--file"} ${d.isExpanded ? "fs-node--expanded" : ""} ${d.isRoot ? "fs-node--root" : ""} ${d.isSelected ? "fs-node--selected" : ""}`}
+        className={`fs-node nopan nodrag ${d.isDir ? "fs-node--dir" : "fs-node--file"} ${d.isExpanded ? "fs-node--expanded" : ""} ${d.isRoot ? "fs-node--root" : ""} ${d.isSelected ? "fs-node--selected" : ""} ${d.isDropTarget ? "fs-node--droptarget" : ""}`}
         title={d.path}
+        data-path={d.path}
+        data-isdir={d.isDir ? "true" : "false"}
+        onPointerDown={(e) => {
+          if (drag) drag.startNodeDrag(e, { path: d.path, name: d.name, isDir: d.isDir, extension: d.extension });
+        }}
       >
         <div className="fs-node__icon">
           {d.isDir

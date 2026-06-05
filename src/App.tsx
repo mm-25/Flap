@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ReactFlow,
@@ -20,9 +21,17 @@ import Dock from "./components/Dock";
 import OutlineSidebar from "./components/OutlineSidebar";
 import SelectionPill from "./components/SelectionPill";
 import ShortcutsModal from "./components/ShortcutsModal";
+import ContextMenu, { CtxItem } from "./components/ContextMenu";
+import PromptDialog from "./components/PromptDialog";
+import InfoModal, { ItemInfo } from "./components/InfoModal";
+import Shelf from "./components/Shelf";
+import DragGhost from "./components/DragGhost";
+import { DragContext } from "./components/dragContext";
 import { useFileTree } from "./hooks/useFileTree";
 import { useColorScheme } from "./hooks/useColorScheme";
 import { useNavStore } from "./hooks/useNavStore";
+import { useShelf, ShelfItem } from "./hooks/useShelf";
+import { useDragController } from "./hooks/useDragController";
 
 const nodeTypes: NodeTypes = { fsNode: FsNodeComponent };
 
@@ -32,11 +41,21 @@ function FlowCanvas() {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; item: CtxItem | null } | null>(null);
+  const [prompt, setPrompt] = useState<{
+    title: string;
+    initialValue: string;
+    confirmLabel: string;
+    selectStem?: boolean;
+    onConfirm: (value: string) => void;
+  } | null>(null);
+  const [infoItem, setInfoItem] = useState<ItemInfo | null>(null);
   const scheme = useColorScheme();
   const dotColor = scheme === "dark" ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.10)";
   const { fitView } = useReactFlow();
   const expandCbRef = useRef<(id: string, path: string) => void>(() => {});
   const { recents, pinned, recordVisit, togglePin, isPinned } = useNavStore();
+  const shelf = useShelf();
 
   // open file with default macOS app
   const handleOpenFile = useCallback(async (path: string) => {
@@ -48,7 +67,7 @@ function FlowCanvas() {
     }
   }, []);
 
-  const { nodes, edges, expandNode, loadRoot, revealPath, collapseAll } = useFileTree(
+  const { nodes, edges, expandNode, loadRoot, revealPath, collapseAll, refreshFolder } = useFileTree(
     useCallback((id: string, path: string) => {
       expandCbRef.current(id, path);
     }, []),
@@ -72,15 +91,6 @@ function FlowCanvas() {
         return { path: d.path as string, name: d.name as string };
       }),
     [nodes]
-  );
-
-  // inject isSelected into node data so FsNode can render the selection ring
-  const displayNodes = useMemo(
-    () => nodes.map((n) => ({
-      ...n,
-      data: { ...n.data, isSelected: (n.data as any).path === selectedPath },
-    })),
-    [nodes, selectedPath]
   );
 
   // keep latest nodes + edges available in event handlers without stale closures
@@ -138,6 +148,182 @@ function FlowCanvas() {
     [handleOpenFile]
   );
 
+  // ── Right-click context menu ──
+  const handleNodeContextMenu = useCallback(
+    (e: React.MouseEvent, node: { data: Record<string, unknown> }) => {
+      e.preventDefault();
+      const d = node.data as any;
+      setSelectedPath(d.path ?? null);
+      setCtxMenu({
+        x: e.clientX,
+        y: e.clientY,
+        item: { path: d.path, name: d.name, isDir: !!d.isDir, extension: d.extension ?? "" },
+      });
+    },
+    []
+  );
+
+  const handlePaneContextMenu = useCallback((e: React.MouseEvent | MouseEvent) => {
+    e.preventDefault();
+    setCtxMenu({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY, item: null });
+  }, []);
+
+  const parentDir = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
+
+  // ── File operations ──
+  const ctxOpen = useCallback((item: CtxItem) => {
+    setSelectedPath(item.path);
+    if (item.isDir) {
+      const n = nodesRef.current.find((nd) => (nd.data as any)?.path === item.path);
+      if (n) expandCbRef.current(n.id, item.path);
+    } else {
+      handleOpenFile(item.path);
+    }
+  }, [handleOpenFile]);
+
+  const ctxReveal = useCallback((item: CtxItem) => {
+    invoke("reveal_in_finder", { path: item.path }).catch((e) =>
+      console.error("[App] reveal failed:", e)
+    );
+  }, []);
+
+  const ctxQuickLook = useCallback((item: CtxItem) => {
+    invoke("quick_look", { path: item.path }).catch((e) =>
+      console.error("[App] quick_look failed:", e)
+    );
+  }, []);
+
+  const ctxGetInfo = useCallback((item: CtxItem) => {
+    invoke<ItemInfo>("get_info", { path: item.path })
+      .then(setInfoItem)
+      .catch((e) => console.error("[App] get_info failed:", e));
+  }, []);
+
+  const ctxRename = useCallback((item: CtxItem) => {
+    setPrompt({
+      title: `Rename "${item.name}"`,
+      initialValue: item.name,
+      confirmLabel: "Rename",
+      selectStem: !item.isDir,
+      onConfirm: async (newName) => {
+        try {
+          const newPath = await invoke<string>("rename_entry", { path: item.path, newName });
+          await refreshFolder(parentDir(item.path));
+          setSelectedPath(newPath);
+        } catch (err) {
+          alert(`Could not rename:\n${err}`);
+        }
+      },
+    });
+  }, [refreshFolder]);
+
+  const ctxDuplicate = useCallback(async (item: CtxItem) => {
+    try {
+      const newPath = await invoke<string>("duplicate_entry", { path: item.path });
+      await refreshFolder(parentDir(item.path));
+      setSelectedPath(newPath);
+    } catch (err) {
+      alert(`Could not duplicate:\n${err}`);
+    }
+  }, [refreshFolder]);
+
+  const ctxNewFolder = useCallback((item: CtxItem | null) => {
+    // destination: clicked folder → inside it; file → its parent; pane → root
+    const dir = item ? (item.isDir ? item.path : parentDir(item.path)) : currentPath;
+    if (!dir) return;
+    setPrompt({
+      title: "New Folder",
+      initialValue: "untitled folder",
+      confirmLabel: "Create",
+      onConfirm: async (name) => {
+        try {
+          const created = await invoke<string>("create_folder", { parentDir: dir, name });
+          // ensure the target dir is expanded so the new folder is visible
+          const dirNode = nodesRef.current.find((n) => (n.data as any)?.path === dir);
+          const dirExpanded = dirNode && (dirNode.data as any)?.isExpanded;
+          if (dirNode && !dirExpanded) {
+            expandCbRef.current(dirNode.id, dir);
+          } else {
+            await refreshFolder(dir);
+          }
+          setTimeout(() => setSelectedPath(created), 100);
+        } catch (err) {
+          alert(`Could not create folder:\n${err}`);
+        }
+      },
+    });
+  }, [currentPath, refreshFolder]);
+
+  const ctxTrash = useCallback(async (item: CtxItem) => {
+    try {
+      await invoke("move_to_trash", { path: item.path });
+      if (selectedPathRef.current === item.path) setSelectedPath(null);
+      await refreshFolder(parentDir(item.path));
+    } catch (err) {
+      alert(`Could not move to Trash:\n${err}`);
+    }
+  }, [refreshFolder]);
+
+  const ctxAddToTray = useCallback((item: CtxItem) => {
+    shelf.add(item);
+  }, [shelf]);
+
+  // ── Drag-to-tray copy/move ──
+  const handleStageItems = useCallback((items: ShelfItem[]) => {
+    items.forEach(shelf.add);
+  }, [shelf]);
+
+  // make a collapsed destination show its new contents after an op
+  const revealResultsIn = useCallback(async (dir: string) => {
+    const dirNode = nodesRef.current.find((n) => (n.data as any)?.path === dir);
+    if (dirNode && !(dirNode.data as any)?.isExpanded) {
+      expandCbRef.current(dirNode.id, dir);
+    } else {
+      await refreshFolder(dir);
+    }
+  }, [refreshFolder]);
+
+  const handleDropOnFolder = useCallback(
+    async (folderPath: string, items: ShelfItem[]) => {
+      const cmd = shelf.mode === "move" ? "move_entry" : "copy_entry";
+      for (const it of items) {
+        try {
+          await invoke(cmd, { src: it.path, destDir: folderPath });
+        } catch (err) {
+          alert(`Could not ${shelf.mode} "${it.name}":\n${err}`);
+        }
+      }
+      await revealResultsIn(folderPath);
+      if (shelf.mode === "move") {
+        const parents = new Set(items.map((i) => parentDir(i.path)));
+        for (const p of parents) await refreshFolder(p);
+        shelf.clear();
+      }
+    },
+    [shelf, refreshFolder, revealResultsIn]
+  );
+
+  const { drag, startNodeDrag, startShelfDrag } = useDragController({
+    onStageItems: handleStageItems,
+    onDropOnFolder: handleDropOnFolder,
+  });
+
+  const dragCtx = useMemo(() => ({ startNodeDrag }), [startNodeDrag]);
+  const dropTargetPath = drag?.kind === "shelf" && drag.target?.type === "folder" ? drag.target.path : null;
+
+  // inject isSelected + isDropTarget into node data for FsNode rendering
+  const displayNodes = useMemo(
+    () => nodes.map((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        isSelected: (n.data as any).path === selectedPath,
+        isDropTarget: (n.data as any).path === dropTargetPath,
+      },
+    })),
+    [nodes, selectedPath, dropTargetPath]
+  );
+
   useEffect(() => {
     expandCbRef.current = (id, path) => expandNode(id, path);
   }, [expandNode]);
@@ -155,6 +341,7 @@ function FlowCanvas() {
   initRootRef.current = async (path: string) => {
     await loadRoot(path, (id, p) => expandCbRef.current(id, p));
     setCurrentPath(path);
+    invoke("watch_root", { path }).catch(() => {});
     setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 150);
   };
 
@@ -163,6 +350,35 @@ function FlowCanvas() {
   useEffect(() => {
     invoke<string>("get_home_dir").then((home) => initRoot(home));
   }, [initRoot]);
+
+  // tell the backend which folders are visible, so the watcher only reports
+  // changes that matter (root + currently expanded folders)
+  useEffect(() => {
+    const dirs = new Set<string>();
+    if (currentPath) dirs.add(currentPath);
+    expandedFolders.forEach((f) => dirs.add(f.path));
+    invoke("set_interest", { dirs: Array.from(dirs) }).catch(() => {});
+  }, [expandedFolders, currentPath]);
+
+  // auto-refresh folders that change on disk (external edits, deletes, moves)
+  useEffect(() => {
+    const pending = new Set<string>();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unlisten = listen<string[]>("fs-change", (e) => {
+      e.payload.forEach((d) => pending.add(d));
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const dirs = Array.from(pending);
+        pending.clear();
+        timer = null;
+        dirs.forEach((d) => refreshFolder(d));
+      }, 200);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+      if (timer) clearTimeout(timer);
+    };
+  }, [refreshFolder]);
 
   // Global ⌘-shortcut handler
   useEffect(() => {
@@ -351,6 +567,7 @@ function FlowCanvas() {
       />
       <div className="canvas-wrapper">
         <SelectionPill item={selectedItem} />
+        <DragContext.Provider value={dragCtx}>
         <ReactFlow
           nodes={displayNodes}
           edges={edges}
@@ -359,10 +576,13 @@ function FlowCanvas() {
           minZoom={0.1}
           maxZoom={2}
           panOnScroll
+          nodesDraggable={false}
           zoomOnDoubleClick={false}
           nodeClickDistance={8}
           onNodeClick={handleNodeClick}
           onNodeDoubleClick={handleNodeDoubleClick}
+          onNodeContextMenu={handleNodeContextMenu}
+          onPaneContextMenu={handlePaneContextMenu}
           onPaneClick={() => setSelectedPath(null)}
           defaultEdgeOptions={{ animated: false }}
           proOptions={{ hideAttribution: true }}
@@ -388,6 +608,7 @@ function FlowCanvas() {
             ariaLabel="Canvas overview"
           />
         </ReactFlow>
+        </DragContext.Provider>
         <Dock
           pinned={pinned}
           active={expandedFolders}
@@ -404,8 +625,54 @@ function FlowCanvas() {
           onToggleExpand={handleOutlineToggleExpand}
           onOpenFile={handleOpenFile}
         />
+        <Shelf
+          items={shelf.items}
+          mode={shelf.mode}
+          visible={shelf.items.length > 0 || drag?.kind === "node"}
+          dropActive={drag?.kind === "node" && drag.target?.type === "shelf"}
+          onSetMode={shelf.setMode}
+          onRemove={shelf.remove}
+          onClear={shelf.clear}
+          onStartDrag={(e) => startShelfDrag(e, shelf.items)}
+        />
       </div>
       {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          item={ctxMenu.item}
+          onClose={() => setCtxMenu(null)}
+          onOpen={ctxOpen}
+          onQuickLook={ctxQuickLook}
+          onReveal={ctxReveal}
+          onGetInfo={ctxGetInfo}
+          onRename={ctxRename}
+          onDuplicate={ctxDuplicate}
+          onAddToTray={ctxAddToTray}
+          onNewFolder={ctxNewFolder}
+          onTrash={ctxTrash}
+        />
+      )}
+      {drag && (
+        <DragGhost
+          items={drag.items}
+          x={drag.x}
+          y={drag.y}
+          active={drag.target !== null}
+        />
+      )}
+      {prompt && (
+        <PromptDialog
+          title={prompt.title}
+          initialValue={prompt.initialValue}
+          confirmLabel={prompt.confirmLabel}
+          selectStem={prompt.selectStem}
+          onConfirm={(v) => { prompt.onConfirm(v); setPrompt(null); }}
+          onClose={() => setPrompt(null)}
+        />
+      )}
+      {infoItem && <InfoModal info={infoItem} onClose={() => setInfoItem(null)} />}
       <SearchOverlay
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}

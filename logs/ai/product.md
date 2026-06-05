@@ -23,6 +23,20 @@ Next: file operations (copy/move) — being designed. Then TopNav breadcrumbs.
 
 ## CHANGE LOG
 
+### [Wed 2026-06-03 16:30]
+**Type:** feature
+**Summary:** Copy/move files via a drag-to-tray staging shelf.
+**Detail:**
+Drag any file/folder onto the bottom tray to stage it; collect from multiple folders (multi-source). Toggle Copy or Move. Then drag the whole batch from the tray onto a destination folder — it highlights as you hover. Copy keeps the tray (drop again at another destination); Move clears it. Right-click → "Add to Tray" also stages. Never overwrites (keep-both naming); blocks copying/moving a folder into itself; Move works across volumes. This is the standout flow Finder can't do: gather from many places, drop once.
+**Impact:** Flap now does the full file-management loop — browse, preview, organize, copy/move — without leaving the canvas.
+
+### [Wed 2026-06-03 15:40]
+**Type:** feature
+**Summary:** Right-click context menu (Finder-like) added.
+**Detail:**
+Right-click any file or folder for: Open, Quick Look, Reveal in Finder, Get Info (panel with kind/size/items/dates/location), New Folder, Rename, Duplicate, Move to Trash (recoverable). Right-click empty canvas → New Folder in the root. This is phase 1 of file management; phase 2 is the drag-to-tray copy/move "shelf" that can collect files from multiple folders and drop them at one destination. Deferred (deep macOS-only): Tags, Share, Services, Compress.
+**Impact:** Users can now do everyday file operations without leaving Flap.
+
 ### [Wed 2026-06-03 00:00]
 **Type:** other
 **Summary:** Product log initialized; captured current feature set.

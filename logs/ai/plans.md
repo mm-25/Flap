@@ -1,7 +1,7 @@
 <!-- CONTEXT_BLOCK -->
 # PLANS — Flap
 Project Type: dev
-Last Updated: [Wed 2026-06-03 15:00]
+Last Updated: [Thu 2026-06-04 21:35]
 
 ## CURRENT STATE
 All planned features shipped. Project pushed to GitHub (public): https://github.com/mm-25/flap
@@ -21,10 +21,29 @@ Shipped feature set:
 
 Reusable primitives: `flyToPath(path)`, `revealPath(path)`, `collapseAll()`, `selectedPath` selection.
 
+File operations — PHASE 1 (right-click context menu) SHIPPED:
+- `ContextMenu.tsx` (onNodeContextMenu / onPaneContextMenu, viewport-clamped, click-outside/Esc close)
+- Actions: Open, Quick Look, Reveal in Finder, Get Info, New Folder, Rename, Duplicate, Move to Trash
+- New Rust commands: `reveal_in_finder`, `move_to_trash` (uses `trash` crate — recoverable), `rename_entry`, `duplicate_entry` (recursive copy + Finder-style " copy" naming), `create_folder`, `get_info` (→ ItemInfo struct)
+- `PromptDialog.tsx` (rename + new folder), `InfoModal.tsx` (Get Info panel)
+- `useFileTree.refreshFolder(path)` — re-reads an expanded folder, reconciles children in place (keeps subtree expansion), relayouts. Called after every mutating op.
+
+File operations — PHASE 2 (copy/move drag-to-tray) SHIPPED:
+- `useShelf` (staging items + copy/move mode), `useDragController` (custom pointer drag), `dragContext.ts`, `Shelf.tsx`, `DragGhost.tsx`
+- node→shelf staging (multi-source), shelf→folder execute; Copy keeps tray, Move clears it; "Add to Tray" in context menu
+- Rust `copy_entry`/`move_entry` (keep-both naming, self-guard, cross-volume fallback)
+
+Live sync: filesystem watcher (notify/FSEvents) auto-refreshes visible folders on external changes. Drag-to-stage canvas-pan bug fixed (nopan/nodrag on nodes).
+
 NEXT threads (not yet started):
-1. **File operations** — copy/move between folders. Approaches brainstormed: carry-drag (A), cut/copy/paste (B), grab-mode (C). User deferred choice. Needs Rust `move_entry`/`copy_entry` + subtree relayout.
-2. **TopNav breadcrumbs** — clickable ancestry trail; reuses `flyToPath`; would unlock sidebar "you are here" highlight via `selectedPath`.
-3. **Custom app icon** — current icon is Tauri default scaffold.
+1. **TopNav breadcrumbs** — clickable ancestry trail; reuses `flyToPath`; would unlock sidebar "you are here" highlight via `selectedPath`.
+2. **Custom app icon** — current icon is Tauri default scaffold.
+
+Possible polish on copy/move (post-test):
+- Per-item drag from tray (currently dragging any chip drags the whole batch).
+- Progress UI for large folder copies (currently fire-and-forget).
+- Direct node→folder drag (skip the tray) as a shortcut.
+- Conflict resolution dialog (replace / keep both / skip) instead of always keep-both.
 
 Open polish / tech-debt:
 - Pins/recents are global, not per-root.
@@ -73,3 +92,24 @@ User cut Focus mode (confusing). Added spacebar Quick Look and reworked the dock
 **Detail:**
 Remaining features shipped since last log: node selection highlight (isSelected in node data, blue ring + fill for files), selection pill (floating top-centre badge showing selected item name/icon), arrow-key navigation (siblings left/right, parent up, child down, Enter expand/open), collapse all (⌘⇧C, collapseAll in useFileTree), fit view shortcut (⌘⇧F), outline toggle shortcut (⌘⇧O), shortcuts modal (⌘/, ShortcutsModal component). All shortcuts use `e.key.toLowerCase()` to avoid WebKit case inconsistency with Shift modifier. README updated (correct GitHub URL, all features documented, shortcuts table). Project initialized as git repo and pushed to https://github.com/mm-25/flap (public).
 **Impact:** v0.1.0 is live. Next threads: file operations (copy/move), breadcrumbs, custom app icon.
+
+### [Wed 2026-06-03 15:40]
+**Type:** feature
+**Summary:** File ops phase 1 — Finder-like right-click context menu shipped.
+**Detail:**
+After a feasibility discussion, user chose to build the context menu (easy+medium tier) first, test, then do copy/move. Shipped: ContextMenu component (react-flow onNodeContextMenu/onPaneContextMenu, viewport-clamped, click-outside/Esc), with Open, Quick Look, Reveal in Finder, Get Info, New Folder, Rename, Duplicate, Move to Trash. Six new Rust commands (reveal_in_finder, move_to_trash via `trash` crate, rename_entry, duplicate_entry with recursive copy + " copy" naming, create_folder, get_info). PromptDialog (rename/new folder) + InfoModal (get info). useFileTree.refreshFolder reconciles an expanded folder in place after mutations. cargo check + npm build both green. Tags/Share/Services/Compress intentionally omitted (deep macOS integration). Move to Trash is recoverable (never hard delete).
+**Impact:** Core file management now possible inside Flap. Phase 2 (copy/move drag-tray) is next after user testing.
+
+### [Wed 2026-06-03 16:30]
+**Type:** feature
+**Summary:** File ops phase 2 — drag-to-tray copy/move shipped (incl. multi-source).
+**Detail:**
+Built the staging tray "shelf": drag canvas nodes into a bottom tray (collect from multiple folders), Copy/Move toggle, then drag the batch onto a destination folder. Custom pointer-drag layer (useDragController) instead of react-flow node drag, with elementFromPoint hit-testing. Rust copy_entry/move_entry added (keep-both naming, self-into-self guard, cross-volume copy+delete fallback). Context menu gained "Add to Tray". Both frontend + cargo green. Remaining: breadcrumbs, custom icon, plus copy/move polish (per-item drag, progress UI, direct node→folder, conflict dialog).
+**Impact:** The full browse→organize→copy/move loop now works in-canvas. Awaiting user testing before polish.
+
+### [Thu 2026-06-04 21:35]
+**Type:** other
+**Summary:** Rebuilt release `.app` bundle after drag-pan fix + live filesystem watching.
+**Detail:**
+Ran `npm run tauri build` — release profile compiled clean (notify/trash/fsevent-sys included), bundle produced at `src-tauri/target/release/bundle/macos/Flap.app`. Bundle reflects: copy/move drag-tray, right-click context menu, nopan drag fix, and live FSEvents-based folder refresh. Still unsigned (`.dmg` not generated; right-click → Open required on first launch). No `.dmg`/codesigning config added yet.
+**Impact:** Distributable build current with all latest features. Codesigning + .dmg remains open if wider distribution is wanted.

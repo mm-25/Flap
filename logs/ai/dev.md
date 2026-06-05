@@ -33,6 +33,27 @@ Key architectural decisions:
 
 ## CHANGE LOG
 
+### [Wed 2026-06-03 17:00]
+**Type:** bug + feature
+**Summary:** Fixed canvas panning during node drag; added live filesystem watching.
+**Detail:**
+BUG: dragging a node to stage it also panned the canvas — because `nodesDraggable={false}` lets the press fall through to react-flow's pane pan. Fix: added react-flow's `nopan nodrag` classes to the `.fs-node` element (panning still works from empty canvas). FEATURE: external fs changes (deletes/moves/edits outside Flap) now auto-reflect. Backend: added `notify` crate (FSEvents on macOS). One recursive watcher on the open root (`watch_root` command, re-armed on Open folder). Frontend registers visible dirs via `set_interest` (root + expandedFolders) on every expansion change; the watcher only emits `fs-change` for events whose parent dir is in that set. Path matching is canonical→original keyed (HashMap) to survive macOS firmlink-resolved event paths. Frontend listens for `fs-change`, debounces 200ms, calls `refreshFolder(dir)` per changed dir (no-op if not expanded). Our own ops also trigger it harmlessly (refreshFolder is idempotent). cargo + npm build green.
+**Impact:** Drag-to-stage no longer moves the canvas. Flap now stays in sync with the filesystem without a manual reload.
+
+### [Wed 2026-06-03 16:30]
+**Type:** feature
+**Summary:** Copy/move via staging tray + custom pointer-drag layer.
+**Detail:**
+Phase 2 of file ops. New: `useShelf` (items + copy/move mode, multi-source, dedup by path), `useDragController` (custom pointer drag — NOT react-flow node drag; THRESHOLD=8px matches nodeClickDistance so clicks still expand; activates a ghost; hit-tests via `document.elementFromPoint`; Esc cancels; toggles `body.is-dragging`), `dragContext.ts` (DragContext so FsNode can start a node drag without prop-drilling), `Shelf.tsx` (bottom tray, Copy/Move toggle, per-item ✕, Clear, drag-out handle), `DragGhost.tsx` (cursor-following ghost, pointer-events:none so hit-testing sees through it). Two drag flows: node→shelf (stage) and shelf→folder (execute). FsNode gained `data-path`/`data-isdir` (drop hit-testing) + `onPointerDown` + `isDropTarget` class. ReactFlow set `nodesDraggable={false}`. App injects `isDropTarget` into displayNodes (folder under a tray-drag highlights). Rust: `copy_entry`/`move_entry` (unique_destination = never overwrite, keep-both naming; is_into_self guard; move falls back to copy+delete cross-volume). After drop: revealResultsIn(dest) (expand if collapsed else refreshFolder); move also refreshes source parents + clears shelf; copy keeps shelf for multi-destination. Context menu gained "Add to Tray". NOTE: had a TDZ bug — displayNodes referenced dropTargetPath before declaration; moved displayNodes below the drag controller.
+**Impact:** Full copy/move, including the headline multi-source → single-destination flow. copy_entry/move_entry + refreshFolder are the fs-mutation primitives.
+
+### [Wed 2026-06-03 15:40]
+**Type:** feature
+**Summary:** Right-click context menu + file-operation Rust commands.
+**Detail:**
+`ContextMenu.tsx` rendered from react-flow `onNodeContextMenu` (node) and `onPaneContextMenu` (empty canvas → only "New Folder"). Viewport-clamped via useLayoutEffect + getBoundingClientRect; closes on click-outside/Esc. New Rust commands in lib.rs (all registered): `reveal_in_finder` (`open -R`), `move_to_trash` (`trash` crate v5, recoverable), `rename_entry` (validates name, blocks collisions, returns new path), `duplicate_entry` (copy_recursively helper + duplicate_destination Finder-style " copy"/" copy N" naming), `create_folder` (collision suffix), `get_info` (→ ItemInfo: name/path/is_dir/size/extension/item_count/modified/created). Frontend: `PromptDialog.tsx` (reused for rename — selectStem selects name w/o extension — and new folder), `InfoModal.tsx`. `useFileTree.refreshFolder(folderPath)` finds node by path, if expanded re-reads dir and reconciles children by path (reuses existing child objects to preserve subtree expansion), relayouts. App wires ctxOpen/ctxReveal/ctxQuickLook/ctxGetInfo/ctxRename/ctxDuplicate/ctxNewFolder/ctxTrash; each mutation calls refreshFolder(parentDir) and updates selection. Cargo.toml: added `trash = "5"`.
+**Impact:** Filesystem mutations now possible from the canvas. Established refreshFolder as the post-op canvas-sync primitive (reused by copy/move next).
+
 ### [Wed 2026-06-03 00:00]
 **Type:** other
 **Summary:** Dev log initialized; captured existing architecture decisions.

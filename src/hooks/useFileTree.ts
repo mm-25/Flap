@@ -264,6 +264,51 @@ export function useFileTree(
     [relayout]
   );
 
+  // Re-read an expanded folder's contents and reconcile in place — used after
+  // file operations (rename / duplicate / new folder / trash) so the canvas
+  // reflects disk. Existing children keep their expansion + subtree.
+  const refreshFolder = useCallback(
+    async (folderPath: string) => {
+      const root = treeRef.current;
+      if (!root) return;
+      const findByPath = (node: TreeNode): TreeNode | null => {
+        if (node.path === folderPath) return node;
+        for (const c of node.children) {
+          const f = findByPath(c);
+          if (f) return f;
+        }
+        return null;
+      };
+      const node = findByPath(root);
+      if (!node || !node.isExpanded) return;
+
+      let entries: FileEntry[] = [];
+      try {
+        entries = await invoke<FileEntry[]>("read_dir", { path: folderPath });
+      } catch {
+        return;
+      }
+      const existing = new Map(node.children.map((c) => [c.path, c]));
+      node.children = entries.map((entry) => {
+        const prev = existing.get(entry.path);
+        if (prev) return prev; // keep expansion + subtree
+        return {
+          id: `${node.id}||${entry.path}`,
+          name: entry.name,
+          path: entry.path,
+          isDir: entry.is_dir,
+          size: entry.size,
+          extension: entry.extension,
+          isExpanded: false,
+          isRoot: false,
+          children: [],
+        };
+      });
+      relayout();
+    },
+    [relayout]
+  );
+
   // Collapse every expanded node back to root-only state.
   const collapseAll = useCallback(() => {
     if (!treeRef.current) return;
@@ -275,5 +320,5 @@ export function useFileTree(
     relayout();
   }, [relayout]);
 
-  return { nodes, edges, expandNode, loadRoot, revealPath, collapseAll };
+  return { nodes, edges, expandNode, loadRoot, revealPath, collapseAll, refreshFolder };
 }
