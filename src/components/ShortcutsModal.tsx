@@ -36,6 +36,7 @@ const SECTIONS = [
       { keys: ["⌘", "⇧", "F"], label: "Fit all nodes in view" },
       { keys: ["⌘", "⇧", "O"], label: "Toggle outline sidebar" },
       { keys: ["⌘", "⇧", "C"], label: "Collapse all folders" },
+      { keys: ["⌘", "R"],      label: "Reload current folder from disk" },
       { keys: ["⌘", "/"],      label: "Show / hide this shortcuts reference" },
     ],
   },

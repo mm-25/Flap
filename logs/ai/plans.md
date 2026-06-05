@@ -33,7 +33,9 @@ File operations — PHASE 2 (copy/move drag-to-tray) SHIPPED:
 - node→shelf staging (multi-source), shelf→folder execute; Copy keeps tray, Move clears it; "Add to Tray" in context menu
 - Rust `copy_entry`/`move_entry` (keep-both naming, self-guard, cross-volume fallback)
 
-Live sync: filesystem watcher (notify/FSEvents) auto-refreshes visible folders on external changes. Drag-to-stage canvas-pan bug fixed (nopan/nodrag on nodes).
+Drag-to-stage canvas-pan bug fixed (nopan/nodrag on nodes).
+
+REVERTED: live filesystem watcher — it destabilized react-flow (constant relayout from home/Adobe-CC churn → broken render + dead fitView). Replaced with manual Reload (⌘R / TopNav button). A safe debounced watcher could return later.
 
 NEXT threads (not yet started):
 1. **TopNav breadcrumbs** — clickable ancestry trail; reuses `flyToPath`; would unlock sidebar "you are here" highlight via `selectedPath`.
@@ -106,6 +108,13 @@ After a feasibility discussion, user chose to build the context menu (easy+mediu
 **Detail:**
 Built the staging tray "shelf": drag canvas nodes into a bottom tray (collect from multiple folders), Copy/Move toggle, then drag the batch onto a destination folder. Custom pointer-drag layer (useDragController) instead of react-flow node drag, with elementFromPoint hit-testing. Rust copy_entry/move_entry added (keep-both naming, self-into-self guard, cross-volume copy+delete fallback). Context menu gained "Add to Tray". Both frontend + cargo green. Remaining: breadcrumbs, custom icon, plus copy/move polish (per-item drag, progress UI, direct node→folder, conflict dialog).
 **Impact:** The full browse→organize→copy/move loop now works in-canvas. Awaiting user testing before polish.
+
+### [Thu 2026-06-04 22:35]
+**Type:** other
+**Summary:** Rebuilt release `.app` and pushed the watcher-removal fix to GitHub.
+**Detail:**
+After confirming the FS-watcher removal fixed the instability (verified live: click root renders root+edges, Fit view works), rebuilt the release bundle and committed/pushed to https://github.com/mm-25/Flap (main). Changes: removed watcher (frontend + Rust + notify dep), added manual Reload (⌘R + TopNav button + shortcuts entry).
+**Impact:** Stable build is current and on GitHub.
 
 ### [Thu 2026-06-04 21:35]
 **Type:** other

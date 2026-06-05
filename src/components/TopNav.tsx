@@ -5,6 +5,7 @@ interface TopNavProps {
   currentPath: string;
   onOpenFolder: (path: string) => void;
   onResetView: () => void;
+  onReload: () => void;
   onCollapseAll: () => void;
   outlineOpen: boolean;
   onToggleOutline: () => void;
@@ -15,6 +16,7 @@ export default function TopNav({
   currentPath,
   onOpenFolder,
   onResetView,
+  onReload,
   onCollapseAll,
   outlineOpen,
   onToggleOutline,
@@ -62,6 +64,12 @@ export default function TopNav({
             <path d="M7 1a6 6 0 100 12A6 6 0 007 1zM4 7h6M7 4v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
           </svg>
           Fit view
+        </button>
+        <button className="btn-nav" onClick={onReload} title="Reload from disk  ⌘R">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M12 7a5 5 0 11-1.46-3.54M12 1.5V4h-2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          Reload
         </button>
         <button className="btn-nav btn-nav--icon" onClick={onShowShortcuts} title="Keyboard shortcuts  ⌘/">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">

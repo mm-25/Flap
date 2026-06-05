@@ -10,6 +10,9 @@ _Last updated: [Wed 2026-06-03 15:00]_
 
 ## Log
 
+**[Thu 2026-06-04 22:25]** — 🐛 Fixed the instability (removed FS watcher) + added Reload
+The live filesystem watcher was the culprit behind nodes/edges disappearing and the canvas "breaking" after clicks — on this machine Adobe Creative Cloud constantly writes files, so the watcher kept rebuilding the canvas and broke react-flow (including Fit view, which the dock/search rely on). Removed it. Added a manual **Reload** button + **⌘R** to refresh from disk instead. Verified the fix live; rebuilt the app.
+
 **[Thu 2026-06-04 21:35]** — 📦 Rebuilt the app
 New `Flap.app` built with all latest features (copy/move tray, right-click menu, drag fix, live filesystem sync). Drag to /Applications; right-click → Open on first launch (unsigned).
 

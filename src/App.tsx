@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ReactFlow,
@@ -341,7 +340,6 @@ function FlowCanvas() {
   initRootRef.current = async (path: string) => {
     await loadRoot(path, (id, p) => expandCbRef.current(id, p));
     setCurrentPath(path);
-    invoke("watch_root", { path }).catch(() => {});
     setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 150);
   };
 
@@ -351,34 +349,13 @@ function FlowCanvas() {
     invoke<string>("get_home_dir").then((home) => initRoot(home));
   }, [initRoot]);
 
-  // tell the backend which folders are visible, so the watcher only reports
-  // changes that matter (root + currently expanded folders)
-  useEffect(() => {
-    const dirs = new Set<string>();
-    if (currentPath) dirs.add(currentPath);
-    expandedFolders.forEach((f) => dirs.add(f.path));
-    invoke("set_interest", { dirs: Array.from(dirs) }).catch(() => {});
-  }, [expandedFolders, currentPath]);
-
-  // auto-refresh folders that change on disk (external edits, deletes, moves)
-  useEffect(() => {
-    const pending = new Set<string>();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const unlisten = listen<string[]>("fs-change", (e) => {
-      e.payload.forEach((d) => pending.add(d));
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        const dirs = Array.from(pending);
-        pending.clear();
-        timer = null;
-        dirs.forEach((d) => refreshFolder(d));
-      }, 200);
-    });
-    return () => {
-      unlisten.then((fn) => fn());
-      if (timer) clearTimeout(timer);
-    };
-  }, [refreshFolder]);
+  // Manual reload — re-read the current root from disk (picks up external changes)
+  const handleReload = useCallback(() => {
+    if (currentPath) {
+      setSelectedPath(null);
+      initRoot(currentPath);
+    }
+  }, [currentPath, initRoot]);
 
   // Global ⌘-shortcut handler
   useEffect(() => {
@@ -411,6 +388,12 @@ function FlowCanvas() {
         setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 80);
         return;
       }
+      // ⌘R → reload current root from disk
+      if (!e.shiftKey && k === "r") {
+        e.preventDefault();
+        handleReload();
+        return;
+      }
       // ⌘/ → shortcuts reference
       if (!e.shiftKey && e.key === "/") {
         e.preventDefault();
@@ -420,7 +403,7 @@ function FlowCanvas() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [fitView, collapseAll]);
+  }, [fitView, collapseAll, handleReload]);
 
   // SPACE → macOS Quick Look preview of the selected item
   useEffect(() => {
@@ -560,6 +543,7 @@ function FlowCanvas() {
         currentPath={currentPath}
         onOpenFolder={initRoot}
         onResetView={() => fitView({ padding: 0.3, duration: 400 })}
+        onReload={handleReload}
         onCollapseAll={() => { collapseAll(); setSelectedPath(null); setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 80); }}
         outlineOpen={outlineOpen}
         onToggleOutline={() => setOutlineOpen((v) => !v)}

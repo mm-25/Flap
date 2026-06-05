@@ -33,6 +33,13 @@ Key architectural decisions:
 
 ## CHANGE LOG
 
+### [Thu 2026-06-04 22:25]
+**Type:** bug
+**Summary:** Removed the filesystem watcher — it was destabilizing react-flow. Added manual Reload (⌘R).
+**Detail:**
+ROOT CAUSE of the "click root → root/edges disappear, can't interact" + "works then breaks" bugs: the live filesystem watcher. It watched the home dir recursively and was in the interest set from launch; on a machine with constant home/Library churn (this user has Adobe Creative Cloud → "Creative Cloud Files" folder, which writes constantly) it fired `fs-change` → `refreshFolder(home)` → `relayout` repeatedly. Each relayout replaces all node objects, so react-flow never stabilized: nodes/edges intermittently failed to render and `fitView` became a no-op (which also broke dock/search/arrow-nav, since they call fitView). Diagnosed by diffing working commit 3bf8c99 → 085b653; the watcher was the destabilizing addition. FIX: removed all watcher wiring — frontend `set_interest` effect, `fs-change` listener, `watch_root` call, `listen` import; Rust `WatchState`, `.setup()` watcher, `watch_root`/`set_interest` commands, notify imports + `notify` Cargo dep. `refreshFolder` retained (still used by copy/move/rename/trash — user-triggered, not racy). Added manual Reload: `handleReload` re-runs initRoot(currentPath) + clears selection; wired to a TopNav "Reload" button + ⌘R + shortcuts modal entry. VERIFIED live in dev: fresh launch → click root → root + edges render correctly + interactive; Fit view works (whole tree fits). Release app rebuilt.
+**Impact:** Core canvas is stable again. Trade-off: external changes no longer auto-refresh — use Reload (⌘R). A debounced/safe watcher could be reintroduced later if wanted.
+
 ### [Wed 2026-06-03 17:00]
 **Type:** bug + feature
 **Summary:** Fixed canvas panning during node drag; added live filesystem watching.

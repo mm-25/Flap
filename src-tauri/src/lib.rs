@@ -1,21 +1,6 @@
 use serde::Serialize;
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use tauri::{Emitter, Manager};
-
-// Filesystem watcher state. A single recursive watch on the open root; the
-// frontend registers which folders it currently shows (`interest`), and we only
-// emit changes whose parent dir is one of those (keyed canonical → original
-// path so firmlink-resolved event paths still match what the UI knows).
-struct WatchState {
-    watcher: Mutex<Option<RecommendedWatcher>>,
-    root: Mutex<Option<PathBuf>>,
-    interest: Arc<Mutex<HashMap<PathBuf, String>>>,
-}
 
 #[derive(Serialize)]
 pub struct FileEntry {
@@ -327,78 +312,11 @@ fn get_info(path: String) -> Result<ItemInfo, String> {
     })
 }
 
-// (Re)start the recursive filesystem watch on `path`.
-#[tauri::command]
-fn watch_root(path: String, state: tauri::State<WatchState>) -> Result<(), String> {
-    let mut w = state.watcher.lock().map_err(|e| e.to_string())?;
-    let mut root = state.root.lock().map_err(|e| e.to_string())?;
-    if let Some(watcher) = w.as_mut() {
-        if let Some(old) = root.take() {
-            let _ = watcher.unwatch(&old);
-        }
-        let p = PathBuf::from(&path);
-        watcher
-            .watch(&p, RecursiveMode::Recursive)
-            .map_err(|e| e.to_string())?;
-        *root = Some(p);
-    }
-    Ok(())
-}
-
-// Register the folders currently visible/expanded in the UI. Only changes
-// inside these directories are forwarded to the frontend.
-#[tauri::command]
-fn set_interest(dirs: Vec<String>, state: tauri::State<WatchState>) -> Result<(), String> {
-    let mut map = state.interest.lock().map_err(|e| e.to_string())?;
-    map.clear();
-    for d in dirs {
-        let pb = PathBuf::from(&d);
-        let canon = pb.canonicalize().unwrap_or(pb);
-        map.insert(canon, d);
-    }
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            let interest: Arc<Mutex<HashMap<PathBuf, String>>> =
-                Arc::new(Mutex::new(HashMap::new()));
-            let interest_cb = interest.clone();
-            let handle = app.handle().clone();
-
-            let watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-                let Ok(event) = res else { return };
-                let map = match interest_cb.lock() {
-                    Ok(m) => m,
-                    Err(_) => return,
-                };
-                let mut hit: std::collections::HashSet<String> = std::collections::HashSet::new();
-                for p in &event.paths {
-                    if let Some(parent) = p.parent() {
-                        let canon = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
-                        if let Some(orig) = map.get(&canon) {
-                            hit.insert(orig.clone());
-                        }
-                    }
-                }
-                drop(map);
-                if !hit.is_empty() {
-                    let _ = handle.emit("fs-change", hit.into_iter().collect::<Vec<_>>());
-                }
-            })
-            .expect("failed to create filesystem watcher");
-
-            app.manage(WatchState {
-                watcher: Mutex::new(Some(watcher)),
-                root: Mutex::new(None),
-                interest,
-            });
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             read_dir,
             get_home_dir,
@@ -410,9 +328,7 @@ pub fn run() {
             copy_entry,
             move_entry,
             create_folder,
-            get_info,
-            watch_root,
-            set_interest
+            get_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
