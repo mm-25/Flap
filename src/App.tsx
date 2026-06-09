@@ -7,6 +7,8 @@ import {
   BackgroundVariant,
   MiniMap,
   useReactFlow,
+  useNodesState,
+  useEdgesState,
   ReactFlowProvider,
   NodeTypes,
 } from "@xyflow/react";
@@ -323,6 +325,31 @@ function FlowCanvas() {
     [nodes, selectedPath, dropTargetPath]
   );
 
+  // ── React Flow controlled state ──
+  // react-flow REQUIRES onNodesChange to apply node measurements; without it,
+  // edges can't be positioned and fitView (search / dock / arrow-nav) no-ops.
+  // Our computed layout stays the source of truth; we sync it in while
+  // preserving react-flow's measured sizes (keyed by node id).
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(displayNodes);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(edges);
+
+  useEffect(() => {
+    setRfNodes((prev) => {
+      const prevById = new Map(prev.map((n) => [n.id, n]));
+      return displayNodes.map((n) => {
+        const old = prevById.get(n.id);
+        // keep react-flow's measured dimensions; take our position + data
+        return old
+          ? { ...old, position: n.position, data: n.data, type: n.type }
+          : n;
+      });
+    });
+  }, [displayNodes, setRfNodes]);
+
+  useEffect(() => {
+    setRfEdges(edges);
+  }, [edges, setRfEdges]);
+
   useEffect(() => {
     expandCbRef.current = (id, path) => expandNode(id, path);
   }, [expandNode]);
@@ -553,8 +580,10 @@ function FlowCanvas() {
         <SelectionPill item={selectedItem} />
         <DragContext.Provider value={dragCtx}>
         <ReactFlow
-          nodes={displayNodes}
-          edges={edges}
+          nodes={rfNodes}
+          edges={rfEdges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
           minZoom={0.1}

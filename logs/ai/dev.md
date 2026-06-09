@@ -33,6 +33,20 @@ Key architectural decisions:
 
 ## CHANGE LOG
 
+### [Thu 2026-06-04 23:30]
+**Type:** bug
+**Summary:** Real root cause of edges-missing / search-not-navigating: react-flow controlled without onNodesChange. Adopted proper controlled state.
+**Detail:**
+Bug persisted on the watcher-free build. Symptoms: connectors to root intermittently missing; search→Enter (and dock/arrow-nav) don't navigate; reload doesn't help. All trace to ONE cause: react-flow v12 was given controlled `nodes` (brand-new objects every render) WITHOUT `onNodesChange`, so it couldn't persist node measurements. Unmeasured nodes → edges can't be positioned (connectors vanish) AND `fitView` no-ops (search/dock/arrow-nav all call fitView via flyToNodeId). It "worked" in the original findability build because there were fewer re-renders; file-ops/selection/drag added enough re-renders to replace nodes mid-measurement and lose `measured`. FIX: switched to react-flow's controlled pattern — `useNodesState`/`useEdgesState` + `onNodesChange`/`onEdgesChange`. Our computed layout (`displayNodes`/`edges`) stays the source of truth; a sync effect writes it into `rfNodes`/`rfEdges` while preserving react-flow's measured dimensions (merge old node by id, take our position+data+type). ReactFlow now uses `rfNodes`/`rfEdges` + the change handlers. `npm run build` green. Installed to /Applications. COULD NOT verify live — the dev/WebView environment degraded to blank/black frames after many launch/kill cycles (machine at ~20% battery); needs a fresh machine state to confirm.
+**Impact:** Should make edges render reliably and fitView-based navigation (search, dock, arrow keys) work consistently. Awaiting user confirmation on a fresh launch/reboot.
+
+### [Thu 2026-06-04 23:10]
+**Type:** bug
+**Summary:** Diagnosed "issue persists" report — user was running a STALE /Applications build (watcher still in it). Installed the fixed build.
+**Detail:**
+User reported the instability persisted, triggered specifically by expanding a TCC-protected folder (Downloads/Documents) → macOS permission prompt → Allow → root node + edges vanish. Investigation finding: `npm run tauri build` outputs to `src-tauri/target/release/bundle/`, NOT `/Applications`. The `/Applications/Flap.app` the user (and I, via `open_application "Flap"`) was launching was an OLDER build that still contained the filesystem watcher — so the watcher-removal fix (commit 33ad5fd) was never actually being run. Confirmed multiple Flap instances were running simultaneously (`/Applications/Flap.app` PID + dev `target/debug/flap` PID). The fixed code (33ad5fd) DID render correctly in a dev instance this session (saw full UI incl. new Reload button). RESOLUTION: copied the fresh fixed bundle to `/Applications/Flap.app` so the user runs the watcher-free build. NOTE: late in the session the WebView began rendering blank on every launch (dev + release) with NO JS error and the bundle not executing — attributed to the machine choking after ~10 rapid launch/kill cycles at ~20% battery (WKWebView content-process pressure), not a code regression (same build rendered earlier). User should fully quit Flap (and ideally reboot / charge) then relaunch the /Applications build.
+**Impact:** Fixed build now actually installed where the user launches it. Could not do a final live confirmation of the TCC scenario due to the environmental blank-WebView state.
+
 ### [Thu 2026-06-04 22:25]
 **Type:** bug
 **Summary:** Removed the filesystem watcher — it was destabilizing react-flow. Added manual Reload (⌘R).
