@@ -80,6 +80,18 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+// Open Terminal at the given directory.
+#[tauri::command]
+fn open_terminal(path: String) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg("-a")
+        .arg("Terminal")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // Move a file or folder to the macOS Trash (recoverable — never a hard delete).
 #[tauri::command]
 fn move_to_trash(path: String) -> Result<(), String> {
@@ -322,6 +334,7 @@ pub fn run() {
             get_home_dir,
             quick_look,
             reveal_in_finder,
+            open_terminal,
             move_to_trash,
             rename_entry,
             duplicate_entry,

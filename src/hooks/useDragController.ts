@@ -23,15 +23,17 @@ interface Pending {
 
 interface Options {
   onStageItems: (items: ShelfItem[]) => void;
-  onDropOnFolder: (folderPath: string, items: ShelfItem[]) => void;
+  onDropOnFolder: (folderPath: string, items: ShelfItem[], source: "node" | "shelf") => void;
+  // expand a single grabbed node into the full set to drag (e.g. the selection)
+  resolveNodeDragItems?: (item: ShelfItem) => ShelfItem[];
 }
 
 const THRESHOLD = 8; // px before a press becomes a drag (matches nodeClickDistance)
 
-// Custom pointer-based drag layer. Two sources:
-//  - "node": a canvas file/folder → drop on the shelf to stage it
-//  - "shelf": staged items → drop on a folder node to copy/move them in
-// Hit-testing is done with elementFromPoint (the ghost is pointer-events:none).
+// Custom pointer-based drag layer.
+//  - "node": a canvas file/folder → drop on the shelf (stage) OR a folder (move)
+//  - "shelf": staged items → drop on a folder node (copy/move per shelf mode)
+// Hit-testing uses elementFromPoint (the ghost is pointer-events:none).
 export function useDragController(options: Options) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -44,15 +46,21 @@ export function useDragController(options: Options) {
     setDrag(d);
   };
 
-  const hitTest = (x: number, y: number, kind: "node" | "shelf"): DragTarget => {
+  const hitTest = (
+    x: number,
+    y: number,
+    kind: "node" | "shelf",
+    items: ShelfItem[]
+  ): DragTarget => {
     const el = document.elementFromPoint(x, y) as HTMLElement | null;
     if (!el) return null;
-    if (kind === "node") {
-      return el.closest(".shelf") ? { type: "shelf" } : null;
-    }
+    if (kind === "node" && el.closest(".shelf")) return { type: "shelf" };
     const node = el.closest(".fs-node") as HTMLElement | null;
     if (node && node.dataset.isdir === "true") {
-      return { type: "folder", path: node.dataset.path || "" };
+      const path = node.dataset.path || "";
+      // never target a folder that's part of what's being dragged
+      if (items.some((it) => it.path === path)) return null;
+      return { type: "folder", path };
     }
     return null;
   };
@@ -69,12 +77,12 @@ export function useDragController(options: Options) {
           items: pending.items,
           x: e.clientX,
           y: e.clientY,
-          target: hitTest(e.clientX, e.clientY, pending.kind),
+          target: hitTest(e.clientX, e.clientY, pending.kind, pending.items),
         });
         return;
       }
       const cur = dragRef.current!;
-      set({ ...cur, x: e.clientX, y: e.clientY, target: hitTest(e.clientX, e.clientY, cur.kind) });
+      set({ ...cur, x: e.clientX, y: e.clientY, target: hitTest(e.clientX, e.clientY, cur.kind, cur.items) });
     };
 
     const finish = () => {
@@ -82,10 +90,10 @@ export function useDragController(options: Options) {
       pendingRef.current = null;
       document.body.classList.remove("is-dragging");
       if (cur) {
-        if (cur.kind === "node" && cur.target?.type === "shelf") {
+        if (cur.target?.type === "shelf") {
           optsRef.current.onStageItems(cur.items);
-        } else if (cur.kind === "shelf" && cur.target?.type === "folder") {
-          optsRef.current.onDropOnFolder(cur.target.path, cur.items);
+        } else if (cur.target?.type === "folder") {
+          optsRef.current.onDropOnFolder(cur.target.path, cur.items, cur.kind);
         }
         set(null);
       }
@@ -113,7 +121,8 @@ export function useDragController(options: Options) {
 
   const startNodeDrag = useCallback((e: React.PointerEvent, item: ShelfItem) => {
     if (e.button !== 0) return;
-    pendingRef.current = { kind: "node", items: [item], startX: e.clientX, startY: e.clientY };
+    const items = optsRef.current.resolveNodeDragItems?.(item) ?? [item];
+    pendingRef.current = { kind: "node", items, startX: e.clientX, startY: e.clientY };
   }, []);
 
   const startShelfDrag = useCallback((e: React.PointerEvent, items: ShelfItem[]) => {

@@ -23,6 +23,13 @@ Next: file operations (copy/move) — being designed. Then TopNav breadcrumbs.
 
 ## CHANGE LOG
 
+### [Thu 2026-06-04 23:55]
+**Type:** feature
+**Summary:** Open in Terminal, multi-select on canvas, direct drag-to-folder for one or many items.
+**Detail:**
+Right-click → "Open in Terminal" launches Terminal at that folder (or the file's containing folder). Marquee-drag empty canvas to select many items at once, or Shift-click to add/remove individually. Drag any selected node onto a folder to MOVE the whole selection in (Finder-style spatial intent). Single node not in selection drags just itself. The bottom Shelf still exists for the Copy/Move toggle and multi-source / multi-destination batches.
+**Impact:** Flap can now do everything you'd reach for the keyboard or Finder for — terminal access, batch selection, and direct moves — without leaving the canvas.
+
 ### [Wed 2026-06-03 16:30]
 **Type:** feature
 **Summary:** Copy/move files via a drag-to-tray staging shelf.

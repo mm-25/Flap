@@ -15,6 +15,7 @@ interface ContextMenuProps {
   onOpen: (item: CtxItem) => void;
   onQuickLook: (item: CtxItem) => void;
   onReveal: (item: CtxItem) => void;
+  onOpenTerminal: (item: CtxItem) => void;
   onGetInfo: (item: CtxItem) => void;
   onRename: (item: CtxItem) => void;
   onDuplicate: (item: CtxItem) => void;
@@ -74,6 +75,7 @@ export default function ContextMenu(props: ContextMenuProps) {
       { kind: "item", label: it.isDir ? "Open" : "Open", run: wrap(() => props.onOpen(it)) },
       { kind: "item", label: "Quick Look", shortcut: "Space", run: wrap(() => props.onQuickLook(it)) },
       { kind: "item", label: "Reveal in Finder", run: wrap(() => props.onReveal(it)) },
+      { kind: "item", label: "Open in Terminal", run: wrap(() => props.onOpenTerminal(it)) },
       { kind: "item", label: "Get Info", run: wrap(() => props.onGetInfo(it)) },
       { kind: "sep" },
       ...(it.isDir

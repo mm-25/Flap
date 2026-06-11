@@ -10,6 +10,9 @@ _Last updated: [Wed 2026-06-03 15:00]_
 
 ## Log
 
+**[Thu 2026-06-04 23:55]** — ✅ Terminal + multi-select + direct drag-to-folder
+Right-click → "Open in Terminal" on any folder/file. Marquee-drag empty canvas or Shift-click to select many nodes. Drag any selected node onto a folder → moves the whole selection in. The Shelf still handles Copy and multi-destination flows. Built and installed.
+
 **[Thu 2026-06-04 22:25]** — 🐛 Fixed the instability (removed FS watcher) + added Reload
 The live filesystem watcher was the culprit behind nodes/edges disappearing and the canvas "breaking" after clicks — on this machine Adobe Creative Cloud constantly writes files, so the watcher kept rebuilding the canvas and broke react-flow (including Fit view, which the dock/search rely on). Removed it. Added a manual **Reload** button + **⌘R** to refresh from disk instead. Verified the fix live; rebuilt the app.
 

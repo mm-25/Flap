@@ -3,6 +3,7 @@ interface SelectedItem {
   path: string;
   isDir: boolean;
   extension: string;
+  count?: number;
 }
 
 interface SelectionPillProps {
@@ -43,14 +44,17 @@ function FolderIcon() {
 // level — especially useful when zoomed far out and items are tiny.
 export default function SelectionPill({ item }: SelectionPillProps) {
   if (!item) return null;
+  const isMulti = (item.count ?? 1) > 1;
 
   return (
     <div className="selection-pill">
-      <span className="selection-pill__label">Selected</span>
+      <span className="selection-pill__label">{isMulti ? "Selected" : "Selected"}</span>
       <div className="selection-pill__item">
-        <span className="selection-pill__icon">
-          {item.isDir ? <FolderIcon /> : <FileIcon extension={item.extension} />}
-        </span>
+        {!isMulti && (
+          <span className="selection-pill__icon">
+            {item.isDir ? <FolderIcon /> : <FileIcon extension={item.extension} />}
+          </span>
+        )}
         <span className="selection-pill__name">{item.name}</span>
       </div>
     </div>

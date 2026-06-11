@@ -33,6 +33,19 @@ Key architectural decisions:
 
 ## CHANGE LOG
 
+### [Thu 2026-06-04 23:55]
+**Type:** feature
+**Summary:** Open in Terminal (right-click) + multi-select (marquee/shift) + direct drag-to-folder.
+**Detail:**
+TERMINAL: Rust `open_terminal(path)` spawns `open -a Terminal <dir>` (folder → its path; file → parent). Registered in invoke_handler. ContextMenu gained "Open in Terminal" entry; App wires `ctxOpenTerminal`.
+
+MULTI-SELECT: Added `selectionSet: Set<string>` (path-keyed) as the broader selection state. ReactFlow props: `selectionOnDrag` enables left-button marquee, `panOnDrag={false}` (panning still works via `panOnScroll`), `selectionKeyCode={null}`, `multiSelectionKeyCode="Shift"`. Single-source-of-truth = react-flow's internal `selected` (handled by `useNodesState`/`onNodesChange`); `onSelectionChange` mirrors selected node data.paths → `selectionSet`. `handleNodeClick` returns early on shift so shift-click doesn't expand. `displayNodes.isSelected` now reads from `selectionSet`, not `selectedPath` (all marqueed/shift-selected nodes get the ring). `SelectionPill` shows "N items" when count > 1. Clearing helpers: `onPaneClick`, `handleReload`, `collapseAll`/⌘⇧C all clear selectionSet too.
+
+DIRECT DRAG TO FOLDER (incl. multi): `useDragController.Options.resolveNodeDragItems(item)` callback added — App resolves: if grabbed node is in selectionSet → drag entire set; else → drag just that one. `onDropOnFolder(folderPath, items, source)` now takes source: "node" → always MOVE (Finder-style), "shelf" → respects shelf.mode (copy/move). Move clears shelf only when source=shelf; node-source moves don't touch shelf. Hit-test in drag controller excludes any folder that's in the drag items (can't drop on self). `dropTargetPath` now lights up for BOTH node-source and shelf-source drags (was previously shelf-only).
+
+CHANGES: src-tauri/src/lib.rs (+open_terminal), src/components/ContextMenu.tsx (+menu entry), src/components/SelectionPill.tsx (+count), src/hooks/useDragController.ts (resolveNodeDragItems + source param + self-guard), src/App.tsx (selectionSet, onSelectionChange, selection-driven isSelected, resolveNodeDragItems impl, handleDropOnFolder source param, ctxOpenTerminal). Verified: `npm run build` clean (213 modules), `cargo check` clean. Release .app built + installed to /Applications.
+**Impact:** Three new capabilities ship together: native Terminal launch from right-click, marquee + shift multi-select, and direct multi-node drag-to-folder (move). Shelf flow still available for cross-source / copy / multi-destination batches.
+
 ### [Thu 2026-06-04 23:30]
 **Type:** bug
 **Summary:** Real root cause of edges-missing / search-not-navigating: react-flow controlled without onNodesChange. Adopted proper controlled state.

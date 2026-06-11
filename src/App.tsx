@@ -42,6 +42,8 @@ function FlowCanvas() {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // broader multi-selection (marquee + shift-click). Always includes selectedPath when set.
+  const [selectionSet, setSelectionSet] = useState<Set<string>>(() => new Set());
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; item: CtxItem | null } | null>(null);
   const [prompt, setPrompt] = useState<{
     title: string;
@@ -104,14 +106,20 @@ function FlowCanvas() {
   const selectedPathRef = useRef<string | null>(null);
   selectedPathRef.current = selectedPath;
 
-  // derive selected item's display data for the SelectionPill
+  // derive selected item's display data for the SelectionPill. Shows a
+  // count when more than one item is selected (multi-select via marquee /
+  // shift-click); otherwise shows the focused single item.
   const selectedItem = useMemo(() => {
+    const multiCount = selectionSet.size;
+    if (multiCount > 1) {
+      return { name: `${multiCount} items`, path: "", isDir: false, extension: "", count: multiCount };
+    }
     if (!selectedPath) return null;
     const n = nodes.find((nd) => (nd.data as any)?.path === selectedPath);
     if (!n) return null;
     const d = n.data as any;
-    return { name: d.name ?? "", path: d.path ?? "", isDir: !!d.isDir, extension: d.extension ?? "" };
-  }, [nodes, selectedPath]);
+    return { name: d.name ?? "", path: d.path ?? "", isDir: !!d.isDir, extension: d.extension ?? "", count: 1 };
+  }, [nodes, selectedPath, selectionSet]);
 
   const flyToPath = useCallback(
     async (path: string, name?: string) => {
@@ -130,15 +138,33 @@ function FlowCanvas() {
 
   // react-flow level click handlers
   const handleNodeClick = useCallback(
-    (_e: React.MouseEvent, node: { id: string; data: Record<string, unknown> }) => {
+    (e: React.MouseEvent, node: { id: string; data: Record<string, unknown> }) => {
       const d = node.data as any;
-      setSelectedPath(d.path ?? null);
+      const path = d.path as string | undefined;
+      // shift = multi-select toggle. React-flow handles the selection update;
+      // we just skip focus + expand so a shift-click doesn't open the folder.
+      if (e.shiftKey) return;
+      setSelectedPath(path ?? null);
       if (d.isDir) {
         expandCbRef.current(node.id, d.path);
         recordVisit({ path: d.path, name: d.name });
       }
     },
     [recordVisit]
+  );
+
+  // Sync react-flow's selection (single click / marquee / shift-click) into
+  // our path-keyed selectionSet so the drag layer can act on it.
+  const handleSelectionChange = useCallback(
+    ({ nodes: selNodes }: { nodes: Array<{ data?: any }> }) => {
+      const paths = new Set<string>();
+      for (const n of selNodes) {
+        const p = (n.data as any)?.path;
+        if (p) paths.add(p);
+      }
+      setSelectionSet(paths);
+    },
+    []
   );
 
   const handleNodeDoubleClick = useCallback(
@@ -185,6 +211,13 @@ function FlowCanvas() {
   const ctxReveal = useCallback((item: CtxItem) => {
     invoke("reveal_in_finder", { path: item.path }).catch((e) =>
       console.error("[App] reveal failed:", e)
+    );
+  }, []);
+
+  const ctxOpenTerminal = useCallback((item: CtxItem) => {
+    const dir = item.isDir ? item.path : item.path.slice(0, item.path.lastIndexOf("/")) || "/";
+    invoke("open_terminal", { path: dir }).catch((e) =>
+      console.error("[App] open_terminal failed:", e)
     );
   }, []);
 
@@ -284,45 +317,72 @@ function FlowCanvas() {
     }
   }, [refreshFolder]);
 
+  // Drop on folder. Source = "shelf" honours the shelf Copy/Move toggle.
+  // Source = "node" (direct drag from canvas) is always a MOVE (Finder-style
+  // spatial intent). Holding the shelf for multi-destination only applies to
+  // the shelf flow.
   const handleDropOnFolder = useCallback(
-    async (folderPath: string, items: ShelfItem[]) => {
-      const cmd = shelf.mode === "move" ? "move_entry" : "copy_entry";
+    async (folderPath: string, items: ShelfItem[], source: "node" | "shelf") => {
+      const mode: "copy" | "move" = source === "node" ? "move" : shelf.mode;
+      const cmd = mode === "move" ? "move_entry" : "copy_entry";
       for (const it of items) {
         try {
           await invoke(cmd, { src: it.path, destDir: folderPath });
         } catch (err) {
-          alert(`Could not ${shelf.mode} "${it.name}":\n${err}`);
+          alert(`Could not ${mode} "${it.name}":\n${err}`);
         }
       }
       await revealResultsIn(folderPath);
-      if (shelf.mode === "move") {
+      if (mode === "move") {
         const parents = new Set(items.map((i) => parentDir(i.path)));
         for (const p of parents) await refreshFolder(p);
-        shelf.clear();
+        if (source === "shelf") shelf.clear();
       }
     },
     [shelf, refreshFolder, revealResultsIn]
   );
 
+  const selectionSetRef = useRef(selectionSet);
+  selectionSetRef.current = selectionSet;
+
+  // If the grabbed node is part of the current selection, drag the whole
+  // selection together. Otherwise drag just the one node.
+  const resolveNodeDragItems = useCallback((item: ShelfItem): ShelfItem[] => {
+    const sel = selectionSetRef.current;
+    if (!sel.has(item.path) || sel.size <= 1) return [item];
+    const out: ShelfItem[] = [];
+    for (const n of nodesRef.current) {
+      const d = n.data as any;
+      if (d?.path && sel.has(d.path)) {
+        out.push({ path: d.path, name: d.name, isDir: !!d.isDir, extension: d.extension ?? "" });
+      }
+    }
+    return out.length ? out : [item];
+  }, []);
+
   const { drag, startNodeDrag, startShelfDrag } = useDragController({
     onStageItems: handleStageItems,
     onDropOnFolder: handleDropOnFolder,
+    resolveNodeDragItems,
   });
 
   const dragCtx = useMemo(() => ({ startNodeDrag }), [startNodeDrag]);
-  const dropTargetPath = drag?.kind === "shelf" && drag.target?.type === "folder" ? drag.target.path : null;
+  const dropTargetPath = drag?.target?.type === "folder" ? drag.target.path : null;
 
   // inject isSelected + isDropTarget into node data for FsNode rendering
   const displayNodes = useMemo(
-    () => nodes.map((n) => ({
-      ...n,
-      data: {
-        ...n.data,
-        isSelected: (n.data as any).path === selectedPath,
-        isDropTarget: (n.data as any).path === dropTargetPath,
-      },
-    })),
-    [nodes, selectedPath, dropTargetPath]
+    () => nodes.map((n) => {
+      const path = (n.data as any).path as string | undefined;
+      return {
+        ...n,
+        data: {
+          ...n.data,
+          isSelected: path ? selectionSet.has(path) : false,
+          isDropTarget: path === dropTargetPath,
+        },
+      };
+    }),
+    [nodes, selectionSet, dropTargetPath]
   );
 
   // ── React Flow controlled state ──
@@ -380,6 +440,7 @@ function FlowCanvas() {
   const handleReload = useCallback(() => {
     if (currentPath) {
       setSelectedPath(null);
+      setSelectionSet(new Set());
       initRoot(currentPath);
     }
   }, [currentPath, initRoot]);
@@ -412,6 +473,7 @@ function FlowCanvas() {
         e.preventDefault();
         collapseAll();
         setSelectedPath(null);
+        setSelectionSet(new Set());
         setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 80);
         return;
       }
@@ -571,7 +633,7 @@ function FlowCanvas() {
         onOpenFolder={initRoot}
         onResetView={() => fitView({ padding: 0.3, duration: 400 })}
         onReload={handleReload}
-        onCollapseAll={() => { collapseAll(); setSelectedPath(null); setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 80); }}
+        onCollapseAll={() => { collapseAll(); setSelectedPath(null); setSelectionSet(new Set()); setTimeout(() => fitView({ padding: 0.3, duration: 400 }), 80); }}
         outlineOpen={outlineOpen}
         onToggleOutline={() => setOutlineOpen((v) => !v)}
         onShowShortcuts={() => setShortcutsOpen((v) => !v)}
@@ -584,6 +646,7 @@ function FlowCanvas() {
           edges={rfEdges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onSelectionChange={handleSelectionChange}
           nodeTypes={nodeTypes}
           fitView
           minZoom={0.1}
@@ -596,7 +659,11 @@ function FlowCanvas() {
           onNodeDoubleClick={handleNodeDoubleClick}
           onNodeContextMenu={handleNodeContextMenu}
           onPaneContextMenu={handlePaneContextMenu}
-          onPaneClick={() => setSelectedPath(null)}
+          onPaneClick={() => { setSelectedPath(null); setSelectionSet(new Set()); }}
+          selectionOnDrag
+          panOnDrag={false}
+          selectionKeyCode={null}
+          multiSelectionKeyCode="Shift"
           defaultEdgeOptions={{ animated: false }}
           proOptions={{ hideAttribution: true }}
         >
@@ -659,6 +726,7 @@ function FlowCanvas() {
           onOpen={ctxOpen}
           onQuickLook={ctxQuickLook}
           onReveal={ctxReveal}
+          onOpenTerminal={ctxOpenTerminal}
           onGetInfo={ctxGetInfo}
           onRename={ctxRename}
           onDuplicate={ctxDuplicate}
